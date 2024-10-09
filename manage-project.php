@@ -9,6 +9,115 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] != 2) {
     exit;
 }
 
+// Hàm upload ảnh lên Imgur và trả về link ảnh
+function uploadImageToImgur($imageFilePath)
+{
+    $client_id = "4e67b818bef40e4"; // Thay thế bằng Client ID của bạn
+
+    // Cấu hình cURL để upload ảnh
+    $curl = curl_init();
+    curl_setopt_array($curl, [
+        CURLOPT_URL => "https://api.imgur.com/3/image",
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => ["Authorization: Client-ID $client_id"],
+        CURLOPT_POSTFIELDS => ['image' => base64_encode(file_get_contents($imageFilePath))]
+    ]);
+
+    // Thực hiện yêu cầu cURL
+    $response = curl_exec($curl);
+    curl_close($curl);
+
+    // Giải mã JSON phản hồi từ Imgur
+    $responseData = json_decode($response, true);
+
+    // Kiểm tra kết quả và trả về link ảnh
+    if (isset($responseData['data']['link'])) {
+        return $responseData['data']['link'];
+    } else {
+        return false;
+    }
+}
+
+// Delete project if a delete request is sent
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['delete_project_id'])) {
+    $project_id = $_POST['delete_project_id'];
+    $sql = "DELETE FROM project WHERE project_id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("i", $project_id);
+
+    if ($stmt->execute()) {
+        // Redirect to avoid resubmitting the form when refreshing the page
+        header('Location: manage-project.php');
+        exit;
+    } else {
+        echo "Error: " . $stmt->error;
+    }
+}
+
+// Add new project
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_project'])) {
+    $title = $_POST['title'];
+    $description = $_POST['description'];
+    $author = $_POST['author'];
+    $status = $_POST['status']; // 'active' or 'pending' directly
+    $source = $_POST['source'];
+    $category_id = $_POST['category_id'];
+
+    // Upload ảnh lên Imgur và nhận link ảnh
+    if ($_FILES['image']['error'] == 0) {
+        $imageFilePath = $_FILES['image']['tmp_name'];
+        $imageUrl = uploadImageToImgur($imageFilePath);
+    } else {
+        $imageUrl = null;
+    }
+
+    // Insert new project into the database
+    $sql = "INSERT INTO project (title, description, author, status, source, image, category_id, create_date, update_date) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ssssssi", $title, $description, $author, $status, $source, $imageUrl, $category_id);
+
+    if ($stmt->execute()) {
+        header('Location: manage-project.php');
+        exit;
+    } else {
+        echo "Error: " . $stmt->error;
+    }
+}
+
+// Update project
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_project_id'])) {
+    $project_id = $_POST['edit_project_id'];
+    $title = $_POST['edit_title'];
+    $description = $_POST['edit_description'];
+    $author = $_POST['edit_author'];
+    $status = $_POST['edit_status']; // 'active' or 'pending' directly
+    $source = $_POST['edit_source'];
+    $category_id = $_POST['edit_category_id'];
+
+    // Kiểm tra xem người dùng có upload ảnh mới hay không
+    if ($_FILES['edit_image']['error'] == 0) {
+        $imageFilePath = $_FILES['edit_image']['tmp_name'];
+        $imageUrl = uploadImageToImgur($imageFilePath);
+    } else {
+        $imageUrl = $_POST['existing_image']; // Sử dụng ảnh hiện tại nếu không upload mới
+    }
+
+    // Update project in the database
+    $sql = "UPDATE project SET title = ?, description = ?, author = ?, status = ?, source = ?, image = ?, category_id = ?, update_date = NOW() 
+            WHERE project_id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ssssssii", $title, $description, $author, $status, $source, $imageUrl, $category_id, $project_id);
+
+    if ($stmt->execute()) {
+        header('Location: manage-project.php');
+        exit;
+    } else {
+        echo "Error: " . $stmt->error;
+    }
+}
+
 $limit = 15; // Số bản ghi trên mỗi trang
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $offset = ($page - 1) * $limit;
@@ -117,6 +226,7 @@ $category_result = $conn->query($category_sql);
                                 <option value="">All Status</option>
                                 <option value="active" <?= ($status_query == 'active') ? 'selected' : ''; ?>>Active</option>
                                 <option value="pending" <?= ($status_query == 'pending') ? 'selected' : ''; ?>>Pending</option>
+                                <option value="disable" <?= ($status_query == 'disable') ? 'selected' : ''; ?>>Disable</option>
                             </select>
                         </div>
                         <div class="col-sm-2">
@@ -177,7 +287,7 @@ $category_result = $conn->query($category_sql);
     <div id="addProjectModal" class="modal fade">
         <div class="modal-dialog">
             <div class="modal-content">
-                <form method="POST" action="">
+                <form method="POST" enctype="multipart/form-data">
                     <div class="modal-header">
                         <h4 class="modal-title">Add Project</h4>
                         <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
@@ -200,6 +310,7 @@ $category_result = $conn->query($category_sql);
                             <select name="status" class="form-control" required>
                                 <option value="active">Active</option>
                                 <option value="pending">Pending</option>
+                                <option value="disable">Disable</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -208,7 +319,7 @@ $category_result = $conn->query($category_sql);
                         </div>
                         <div class="form-group">
                             <label>Image</label>
-                            <input type="text" name="image" class="form-control" required>
+                            <input type="file" name="image" class="form-control" required>
                         </div>
                         <div class="form-group">
                             <label>Category</label>
@@ -238,7 +349,7 @@ $category_result = $conn->query($category_sql);
     <div id="editProjectModal" class="modal fade">
         <div class="modal-dialog">
             <div class="modal-content">
-                <form method="POST" action="">
+                <form method="POST" enctype="multipart/form-data">
                     <div class="modal-header">
                         <h4 class="modal-title">Edit Project</h4>
                         <button type="button" class="close" data-dismiss="modal" aria-hidden="true">&times;</button>
@@ -261,6 +372,7 @@ $category_result = $conn->query($category_sql);
                             <select name="edit_status" class="form-control" required>
                                 <option value="active">Active</option>
                                 <option value="pending">Pending</option>
+                                <option value="disable">Disable</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -269,7 +381,9 @@ $category_result = $conn->query($category_sql);
                         </div>
                         <div class="form-group">
                             <label>Image</label>
-                            <input type="text" name="edit_image" class="form-control" required>
+                            <img id="edit_image_preview" src="" alt="Project Image" style="width:100px;height:100px;">
+                            <input type="file" name="edit_image" class="form-control">
+                            <input type="hidden" name="existing_image" id="existing_image">
                         </div>
                         <div class="form-group">
                             <label>Category</label>
@@ -336,7 +450,8 @@ $category_result = $conn->query($category_sql);
             $('input[name="edit_author"]').val(author);
             $('select[name="edit_status"]').val(status);
             $('input[name="edit_source"]').val(source);
-            $('input[name="edit_image"]').val(image);
+            $('#edit_image_preview').attr('src', image); // Show current image
+            $('#existing_image').val(image); // Store current image URL
             $('select[name="edit_category_id"]').val(category);
         });
 

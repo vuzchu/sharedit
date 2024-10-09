@@ -1,4 +1,7 @@
 <?php
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 // Kết nối đến cơ sở dữ liệu
 include 'db_connect.php';
 
@@ -20,47 +23,64 @@ if (isset($_GET['category']) && !empty($_GET['category'])) {
     $category_query = $_GET['category'];
 }
 
-// Xây dựng câu truy vấn SQL động dựa trên điều kiện tìm kiếm
-$query = "SELECT SQL_CALC_FOUND_ROWS project_id, title, description, image, source 
+// Truy vấn lấy dữ liệu cho trang hiện tại
+$query = "SELECT project_id, title, description, image, source 
           FROM project 
-          WHERE title LIKE ? AND status = 'active'";
+          WHERE (title LIKE ? OR author LIKE ?) AND status = 'active'";
 
-// Nếu có chọn danh mục, thêm điều kiện cho category_id
 if (!empty($category_query)) {
     $query .= " AND category_id = ?";
 }
 
 $query .= " ORDER BY create_date DESC LIMIT ? OFFSET ?";
 
-// Chuẩn bị câu truy vấn
 $stmt = $conn->prepare($query);
 
-// Gán giá trị cho các tham số, phụ thuộc vào việc người dùng có chọn category hay không
+// Gán giá trị cho các tham số
 $search_query_wildcard = "%" . $search_query . "%";
 
 if (!empty($category_query)) {
-    $stmt->bind_param("ssii", $search_query_wildcard, $category_query, $limit, $offset);
+    $stmt->bind_param("sssii", $search_query_wildcard, $search_query_wildcard, $category_query, $limit, $offset);
 } else {
-    $stmt->bind_param("sii", $search_query_wildcard, $limit, $offset);
+    $stmt->bind_param("ssii", $search_query_wildcard, $search_query_wildcard, $limit, $offset);
 }
 
-// Thực thi câu truy vấn và lấy kết quả
+// Thực thi câu truy vấn
 $stmt->execute();
 $result = $stmt->get_result();
 $projects = $result->fetch_all(MYSQLI_ASSOC);
+$stmt->close();
 
-// Lấy tổng số bản ghi để phân trang
-$total_query = "SELECT FOUND_ROWS() as total";
-$total_result = $conn->query($total_query);
+// Truy vấn tổng số bản ghi
+$total_query = "SELECT COUNT(*) as total 
+                FROM project 
+                WHERE (title LIKE ? OR author LIKE ?) AND status = 'active'";
+
+if (!empty($category_query)) {
+    $total_query .= " AND category_id = ?";
+}
+
+$stmt_total = $conn->prepare($total_query);
+
+if (!empty($category_query)) {
+    $stmt_total->bind_param("sss", $search_query_wildcard, $search_query_wildcard, $category_query);
+} else {
+    $stmt_total->bind_param("ss", $search_query_wildcard, $search_query_wildcard);
+}
+
+$stmt_total->execute();
+$total_result = $stmt_total->get_result();
 $total_row = $total_result->fetch_assoc();
 $total_projects = $total_row['total'];
-
-// Đóng câu truy vấn
-$stmt->close();
+$stmt_total->close();
 
 // Tính tổng số trang
 $total_pages = ceil($total_projects / $limit);
+
+$conn->close();
 ?>
+
+
 
 <!DOCTYPE html>
 <html lang="en">
@@ -69,6 +89,8 @@ $total_pages = ceil($total_projects / $limit);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Project List</title>
+    <meta property="og:image" content="https://i.imgur.com/akIxlUo.png">
+    <meta name="google-site-verification" content="Ct2szNJeQoUZjluCsbFmVfhVYKcWc0DEESatMcg-mgg" />
     <link rel="stylesheet" href="css/style.css">
     <style>
         .list-container {
@@ -134,6 +156,7 @@ $total_pages = ceil($total_projects / $limit);
     <?php include 'sidebar.php'; ?>
 
     <!-- Main content -->
+
     <div class="container">
 
         <!-- Hiển thị từ khóa tìm kiếm -->
@@ -146,7 +169,7 @@ $total_pages = ceil($total_projects / $limit);
                 <?php foreach ($projects as $project): ?>
                     <div class="video-list">
                         <a href="<?= htmlspecialchars($project['source']) ?>" target="_blank">
-                            <img src="<?= htmlspecialchars($project['image']) ?>" class="thumbnail" alt="Project Thumbnail">
+                            <img src="<?= htmlspecialchars($project['image']) ?>" class="thumbnail" alt="Project Thumbnail" loading="lazy">
                         </a>
                         <div class="video-info">
                             <a href="<?= htmlspecialchars($project['source']) ?>" target="_blank">

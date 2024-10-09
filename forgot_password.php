@@ -1,44 +1,52 @@
 <?php
 session_start();
-include 'db_connect.php';
+include 'db_connect.php'; // Include DB connection
+require 'send_email.php'; // Include your PHPMailer logic for sending email
 
-// Biến lưu thông báo lỗi
 $error_message = '';
+$success_message = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email'] ?? '';
-    $password = $_POST['password'] ?? '';
 
-    // Kiểm tra nếu email và mật khẩu không rỗng
-    if (!empty($email) && !empty($password)) {
-        $stmt = $conn->prepare("SELECT user_id, username,full_name, password, role_id FROM users WHERE email = ?");
+    // Check if the email is provided
+    if (!empty($email)) {
+        $stmt = $conn->prepare("SELECT user_id FROM users WHERE email = ?");
         $stmt->bind_param("s", $email);
         $stmt->execute();
         $result = $stmt->get_result();
 
-        // Kiểm tra nếu người dùng tồn tại
+        // Check if the email exists in the database
         if ($result->num_rows === 1) {
             $user = $result->fetch_assoc();
-            if ($password === $user['password']) { // Không dùng password_verify vì mật khẩu đang không mã hóa
-                // Lưu thông tin người dùng vào session
-                $_SESSION['user_id'] = $user['user_id'];
-                $_SESSION['full_name'] = $user['full_name'];
-                $_SESSION['role_id'] = $user['role_id']; // Lưu role_id vào session
+            $user_id = $user['user_id'];
 
-                // Chuyển hướng tới trang chủ
-                header('Location: index.php');
-                exit;
+            // Generate a unique token
+            $token = bin2hex(random_bytes(50));
+
+            // Insert the token into the password_resets table
+            $stmt = $conn->prepare("INSERT INTO password_resets (user_id, token) VALUES (?, ?)");
+            $stmt->bind_param("is", $user_id, $token);
+            $stmt->execute();
+
+            // Generate the reset link
+            $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+            $domain = $_SERVER['HTTP_HOST'];
+            $resetLink = $protocol . '://' . $domain . '/reset_password.php?token=' . $token;
+
+            // Send reset password email
+            if (sendResetEmail($email, $resetLink)) {
+                $success_message = 'A password reset link has been sent to your email.';
             } else {
-                $error_message = 'Invalid email or password.';
+                $error_message = 'Failed to send the reset link. Please try again.';
             }
         } else {
-            $error_message = 'Invalid email or password.';
+            $error_message = 'Email does not exist in our records.';
         }
     } else {
-        $error_message = 'Please fill in all fields.';
+        $error_message = 'Please provide an email.';
     }
 }
-
 ?>
 
 <!DOCTYPE html>
@@ -47,10 +55,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
+    <title>Forgot Password</title>
     <link rel="stylesheet" href="css/style.css">
     <style>
-        /* Styling cho form-container */
+        /* You can use the same style from login.css or adjust this as needed */
         .form-container {
             max-width: 400px;
             margin: 100px auto;
@@ -103,6 +111,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-bottom: 15px;
             text-align: center;
         }
+
+        .success {
+            color: green;
+            margin-bottom: 15px;
+            text-align: center;
+        }
     </style>
 </head>
 
@@ -113,36 +127,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <div class="container">
         <div class="form-container">
-            <h2>Login</h2>
+            <h2>Forgot Password</h2>
 
-            <!-- Hiển thị thông báo lỗi -->
+            <!-- Display success message if any -->
+            <?php if (!empty($success_message)): ?>
+                <div class="success"><?= htmlspecialchars($success_message) ?></div>
+            <?php endif; ?>
+
+            <!-- Display error message if any -->
             <?php if (!empty($error_message)): ?>
                 <div class="error"><?= htmlspecialchars($error_message) ?></div>
             <?php endif; ?>
 
-            <form action="login.php" method="POST">
+            <form action="forgot_password.php" method="POST">
                 <div class="form-group">
-                    <label for="email">Email</label>
+                    <label for="email">Enter your email</label>
                     <input type="email" id="email" name="email" required>
                 </div>
 
-                <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" name="password" required>
-                </div>
+                <button type="submit" class="submit-btn">Send Reset Password</button>
 
-                <button type="submit" class="submit-btn">Login</button>
-
-                <!-- Thêm liên kết "Register" và "Forgot Password" ngay dưới nút Login -->
+                <!-- Back to login link -->
                 <div style="text-align: center; margin-top: 10px;">
-                    <p>Don't have an account? <a href="register.php">Register</a></p>
-                    <p><a href="forgot_password.php">Forgot Password?</a></p>
+                    <p><a href="login.php">Back to Login</a></p>
                 </div>
             </form>
-
         </div>
     </div>
 </body>
 <script src="js/script.js"></script>
 
 </html>
+
+<?php
+// Đóng kết nối cơ sở dữ liệu
+$conn->close();
+?>

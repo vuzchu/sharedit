@@ -97,7 +97,7 @@ nav{
 }
 
 .shortcut a:first-child{
-    color: #335eed;
+    color: #46484e;
 }
 
 .sidebar hr{
@@ -343,7 +343,7 @@ nav{
 }
 
 .owner button{
-    background-color: red;
+    background-color: rgb(0, 81, 255);
     color: #fff;
     padding: 8px 30px;
     border: 0;

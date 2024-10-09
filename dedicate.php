@@ -2,6 +2,35 @@
 // Kết nối đến cơ sở dữ liệu
 include 'db_connect.php';
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Hàm upload ảnh lên Imgur và trả về link ảnh
+function uploadImageToImgur($imageFilePath)
+{
+    $client_id = "your_client_id"; // Thay thế bằng Client ID của bạn từ Imgur API
+
+    $curl = curl_init();
+    curl_setopt_array($curl, [
+        CURLOPT_URL => "https://api.imgur.com/3/image",
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => ["Authorization: Client-ID $client_id"],
+        CURLOPT_POSTFIELDS => ['image' => base64_encode(file_get_contents($imageFilePath))],
+    ]);
+
+    $response = curl_exec($curl);
+    curl_close($curl);
+
+    $responseData = json_decode($response, true);
+    if (isset($responseData['data']['link'])) {
+        return $responseData['data']['link'];
+    } else {
+        return false;
+    }
+}
+
 // Kiểm tra nếu form đã được gửi
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Lấy dữ liệu từ form
@@ -25,16 +54,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Lấy thời gian hiện tại cho `create_date` và `update_date`
         $current_time = date('Y-m-d H:i:s');
 
+        // Kiểm tra và xử lý upload ảnh nếu có file được upload
+        if ($_FILES['image']['error'] == 0) {
+            $imageFilePath = $_FILES['image']['tmp_name'];
+            $imageUrl = uploadImageToImgur($imageFilePath); // Gọi hàm upload ảnh
+        } else {
+            $imageUrl = null; // Nếu không có ảnh được upload
+        }
+
         // Chuẩn bị câu truy vấn SQL để thêm dự án vào bảng `project`
-        $stmt = $conn->prepare("INSERT INTO project (title, description, category_id, source, status, author, create_date, update_date) 
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt = $conn->prepare("INSERT INTO project (title, description, category_id, source, status, author, image, create_date, update_date) 
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         // Kiểm tra lỗi trong truy vấn chuẩn bị
         if ($stmt === false) {
             echo "<p style='color:red;'>SQL Error: " . htmlspecialchars($conn->error) . "</p>";
         } else {
             // Liên kết dữ liệu với câu truy vấn
-            $stmt->bind_param("ssisssss", $title, $description, $category_id, $source, $status, $author, $current_time, $current_time);
+            $stmt->bind_param("ssisssss", $title, $description, $category_id, $source, $status, $author, $imageUrl, $current_time, $current_time);
 
             // Thực thi câu truy vấn
             if ($stmt->execute()) {
@@ -192,7 +229,7 @@ $categories = $result->fetch_all(MYSQLI_ASSOC);
                 <div class="message success"><?= htmlspecialchars($success_message) ?></div>
             <?php endif; ?>
 
-            <form action="" method="POST" id="dedicateForm">
+            <form action="" method="POST" id="dedicateForm" enctype="multipart/form-data">
                 <!-- Tiêu đề -->
                 <div class="form-group">
                     <label for="title">Title - Required</label>
@@ -231,6 +268,12 @@ $categories = $result->fetch_all(MYSQLI_ASSOC);
                     <label for="author">Author - Required</label>
                     <input type="text" id="author" name="author" placeholder="Enter author's name" required>
                     <span class="form-error">Please enter the author's name.</span>
+                </div>
+
+                <!-- Upload ảnh -->
+                <div class="form-group">
+                    <label for="image">Upload Image</label>
+                    <input type="file" name="image" class="form-control">
                 </div>
 
                 <!-- Nút gửi -->

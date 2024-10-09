@@ -3,6 +3,9 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Bao gồm file kết nối đến cơ sở dữ liệu
+include 'db_connect.php';
+
 // Get the categories from the database to display in the dropdown
 $categories = [];
 $query = "SELECT category_id, category_name FROM category";
@@ -16,9 +19,9 @@ $categories = $result->fetch_all(MYSQLI_ASSOC);
     </div>
     <div class="nav-middle flex-div">
         <div class="search flex-div">
-            <form action="index.php" method="GET" class="search-form">
+            <form action="index.php" method="GET" class="search-form" id="searchForm">
                 <!-- Dropdown for category -->
-                <select name="category" class="category-select">
+                <select name="category" class="category-select" onchange="document.getElementById('searchForm').submit();">
                     <option value="">All Categories</option>
                     <?php foreach ($categories as $category): ?>
                         <option value="<?= htmlspecialchars($category['category_id']) ?>"
@@ -29,7 +32,7 @@ $categories = $result->fetch_all(MYSQLI_ASSOC);
                 </select>
 
                 <!-- Search input -->
-                <input type="text" name="search" placeholder="Search here" value="<?= isset($_GET['search']) ? htmlspecialchars($_GET['search']) : '' ?>" class="search-input">
+                <input type="text" name="search" placeholder="Search by title or author" value="<?= isset($_GET['search']) ? htmlspecialchars($_GET['search']) : '' ?>" class="search-input">
 
                 <!-- Search button -->
                 <button type="submit" class="search-btn"><img src="img/search.png" alt=""></button>
@@ -44,7 +47,7 @@ $categories = $result->fetch_all(MYSQLI_ASSOC);
                 <div class="dropdown-content">
                     <!-- Kiểm tra nếu người dùng là staff (role_id = 2) thì hiển thị link quản lý -->
                     <?php if (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 2): ?>
-                        <a href="manage-project.php">Manage Projects</a>
+                        <a href="manage-project.php">Projects</a>
                     <?php endif; ?>
                     <a href="logout.php">Logout</a>
                 </div>
@@ -172,5 +175,32 @@ $categories = $result->fetch_all(MYSQLI_ASSOC);
         dropdownContent.addEventListener('click', function(event) {
             event.stopPropagation();
         });
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Biến lưu thời gian chờ
+        let timeout = null;
+
+        // Lấy phần tử ô tìm kiếm và dropdown danh mục
+        const searchInput = document.querySelector('.search-input');
+        const categorySelect = document.querySelector('.category-select');
+        const searchForm = document.getElementById('searchForm');
+
+        // Hàm tự động submit form sau 1,5 giây
+        function autoSearch() {
+            // Xóa thời gian chờ trước đó
+            clearTimeout(timeout);
+
+            // Thiết lập thời gian chờ mới
+            timeout = setTimeout(function() {
+                searchForm.submit(); // Tự động submit form
+            }, 1000);
+        }
+
+        // Lắng nghe sự kiện nhập vào ô tìm kiếm
+        searchInput.addEventListener('input', autoSearch);
+
+        // Lắng nghe sự kiện thay đổi danh mục
+        categorySelect.addEventListener('change', autoSearch);
     });
 </script>

@@ -2,9 +2,13 @@
     <div class="sidebar" style="margin-top: 30px;">
         <div class="shortcut">
             <a href="index.php"><img src="img/home.png" alt="">
-                <p>Home</p>
+                <p style="color: #444444;">Home</p>
+
             </a>
             <a href="dedicate.php"><img src="img/explore.png" alt="">
+                <p>Dedicate</p>
+            </a>
+            <a href="about_us.php"><img src="img/explore.png" alt="">
                 <p>Dedicate</p>
             </a>
             <!-- <a href="favorite.php"><img src="img/like.png" alt="">
@@ -21,3 +25,13 @@
             </a> -->
         </div>
     </div>
+
+    <style>
+        /* Targeting the home icon and applying a grayscale filter */
+        .sidebar .shortcut a img[src="img/home.png"] {
+            filter: grayscale(100%);
+            /* Turn the image to grayscale */
+            opacity: 0.6;
+            /* Adjusting opacity to match the grey tone of the other icon */
+        }
+    </style>
